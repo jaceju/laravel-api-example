@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laravel Modular API Documentation (HATEOAS + Sanctum + Standardized Errors)</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3.52.5/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+        .swagger-ui .topbar {
+            background-color: #2c3e50;
+        }
+        .swagger-ui .topbar .topbar-wrapper .link {
+            color: #ecf0f1;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@3.52.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@3.52.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: './openapi.yaml',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                validatorUrl: null,
+                tryItOutEnabled: true,
+                supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+                docExpansion: 'list',
+                jsonEditor: false,
+                defaultModelRendering: 'schema',
+                showRequestHeaders: true,
+                showCommonExtensions: true,
+                onComplete: function() {
+                    console.log("Swagger UI loaded successfully");
+                    console.log("📚 API Documentation Features:");
+                    console.log("   ✅ HATEOAS support with hypermedia links");
+                    console.log("   ✅ Standardized error responses (4xx/5xx)");
+                    console.log("   ✅ Laravel Sanctum API Token authentication");
+                    console.log("   ✅ Modular architecture with nWidart/laravel-modules");
+                    console.log("   📖 Error response documentation: ./ERROR_RESPONSES.md");
+                    console.log("   📖 Complete API guide: ./README.md");
+                }
+            });
+
+            // 設定預設的 Authorization header (Sanctum Token)
+            ui.preauthorizeApiKey('BearerAuth', 'Bearer YOUR_SANCTUM_TOKEN_HERE');
+        }
+    </script>
+</body>
+</html>

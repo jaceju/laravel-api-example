@@ -1,0 +1,567 @@
+openapi: 3.0.3
+info:
+  title: Laravel API - Authentication
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: |
+    Laravel API 的身份驗證（Authentication）與使用者管理（User Management）端點。
+
+    本 API 採用 Laravel Sanctum 進行基於 Token 的身份驗證（Token-based authentication）。
+
+    ## Authentication Flow（身份驗證流程）
+
+    1. 透過 **Register（註冊）** 或 **Login（登入）** 取得 access token
+    2. 在需要保護的端點請求中，於 `Authorization` 標頭（header）中帶入 token
+    3. 使用 **Refresh（刷新）** 於到期前取得新 token
+    4. 執行 **Logout（登出）** 以撤銷（revoke）目前的 token
+
+    ## Token Format（Token 格式）
+
+    ```
+    Authorization: Bearer {sanctum_token}
+    ```
+
+servers:
+  - url: "{protocol}://{host}"
+    description: API 伺服器
+    variables:
+      protocol:
+        enum: ['http', 'https']
+        default: 'https'
+      host:
+        default: 'localhost:8000'
+        description: '開發伺服器的主機（host）與埠號（port）'
+
+paths:
+  # ===============================
+  # User Registration
+  # ===============================
+  /v1/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: 註冊新使用者
+      description: |
+        建立新的使用者帳戶並回傳身份驗證 token。
+
+        註冊流程會驗證輸入資料並建立新使用者。
+        註冊成功後會自動產生身份驗證 token。
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              basic_registration:
+                summary: Basic user registration
+                value:
+                  name: "John Doe"
+                  email: "john.doe@example.com"
+                  password: "password123"
+                  password_confirmation: "password123"
+      responses:
+        '201':
+          description: 使用者註冊成功
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              examples:
+                successful_registration:
+                  summary: Successful user registration
+                  value:
+                    message: "User registered successfully"
+                    data:
+                      user:
+                        id: 1
+                        name: "John Doe"
+                        email: "john.doe@example.com"
+                        created_at: "2025-07-13T10:30:00.000000Z"
+                        updated_at: "2025-07-13T10:30:00.000000Z"
+                      token: "1|abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+                      token_type: "Bearer"
+                    links:
+                      self:
+                        href: "http://localhost/v1/auth/me"
+                        method: "GET"
+                        description: "取得目前使用者資訊"
+                      actions:
+                        logout:
+                          href: "http://localhost/v1/auth/logout"
+                          method: "POST"
+                          description: "登出目前 session"
+                        profiles:
+                          href: "http://localhost/v1/profiles"
+                          method: "GET"
+                          description: "存取使用者 profiles"
+        '400':
+          $ref: './_common.yaml#/components/responses/BadRequestError'
+        '422':
+          $ref: './_common.yaml#/components/responses/ValidationError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+        '503':
+          $ref: './_common.yaml#/components/responses/ServiceUnavailableError'
+
+  # ===============================
+  # User Login
+  # ===============================
+  /v1/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: 使用者身份驗證
+      description: |
+        使用 email 與密碼驗證使用者身份，並回傳 access token。
+
+        Token 應於後續請求的 `Authorization` 標頭中帶入。
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              basic_login:
+                summary: Basic login
+                value:
+                  email: "john.doe@example.com"
+                  password: "password123"
+      responses:
+        '200':
+          description: 登入成功
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              examples:
+                successful_login:
+                  summary: Successful login
+                  value:
+                    message: "Login successful"
+                    data:
+                      user:
+                        id: 1
+                        name: "John Doe"
+                        email: "john.doe@example.com"
+                        created_at: "2025-07-13T10:30:00.000000Z"
+                        updated_at: "2025-07-13T10:30:00.000000Z"
+                      token: "2|def456ghi789jkl012mno345pqr678stu901vwx234yza"
+                      token_type: "Bearer"
+                    links:
+                      self:
+                        href: "http://localhost/v1/auth/me"
+                        method: "GET"
+                        description: "取得目前使用者資訊"
+                      actions:
+                        logout:
+                          href: "http://localhost/v1/auth/logout"
+                          method: "POST"
+                          description: "登出目前 session"
+                        refresh:
+                          href: "http://localhost/v1/auth/refresh"
+                          method: "POST"
+                          description: "刷新 access token"
+        '400':
+          $ref: './_common.yaml#/components/responses/BadRequestError'
+        '401':
+          description: 無效的憑證（credentials）
+          content:
+            application/json:
+              schema:
+                $ref: './_common.yaml#/components/schemas/AuthenticationError'
+              examples:
+                invalid_credentials:
+                  summary: Invalid email or password
+                  value:
+                    error:
+                      code: "INVALID_CREDENTIALS"
+                      message: "The provided credentials are incorrect."
+                      details: "Please check your email and password and try again."
+                      timestamp: "2025-07-13T10:30:00.000000Z"
+                      request_id: "req_abc123def456"
+                    data:
+                      reason: "invalid_credentials"
+                    links:
+                      self:
+                        href: "http://localhost/v1/auth/login"
+                        method: "POST"
+                      actions:
+                        retry:
+                          href: "http://localhost/v1/auth/login"
+                          method: "POST"
+                          description: "使用正確的憑證重新登入"
+                      help:
+                        href: "https://api.example.com/docs/authentication"
+                        description: "身份驗證說明文件"
+        '422':
+          $ref: './_common.yaml#/components/responses/ValidationError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+        '503':
+          $ref: './_common.yaml#/components/responses/ServiceUnavailableError'
+
+  # ===============================
+  # User Logout
+  # ===============================
+  /v1/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: 使用者登出
+      description: |
+        撤銷目前的 access token，有效地將使用者登出。
+
+        登出後，此 token 將不再能用於 API 存取。
+      operationId: logoutUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 登出成功
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './_common.yaml#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        nullable: true
+                        example: null
+              examples:
+                successful_logout:
+                  summary: Successful logout
+                  value:
+                    message: "Logout successful"
+                    data: {}
+                    links:
+                      self:
+                        href: "http://localhost/v1/auth/logout"
+                        method: "POST"
+                        description: "登出端點"
+                      actions:
+                        login:
+                          href: "http://localhost/v1/auth/login"
+                          method: "POST"
+                          description: "重新登入"
+                        register:
+                          href: "http://localhost/v1/auth/register"
+                          method: "POST"
+                          description: "建立新帳戶"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+  # ===============================
+  # Get Current User
+  # ===============================
+  /v1/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: 取得已驗證的使用者
+      description: |
+        取得目前已驗證使用者的資訊。
+
+        此端點可用於驗證 token 有效性並取得使用者詳細資料。
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 成功取得使用者資料
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './_common.yaml#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user:
+                            $ref: '#/components/schemas/User'
+              examples:
+                current_user:
+                  summary: Current user information
+                  value:
+                    message: "User retrieved successfully"
+                    data:
+                      user:
+                        id: 1
+                        name: "John Doe"
+                        email: "john.doe@example.com"
+                        created_at: "2025-07-13T10:30:00.000000Z"
+                        updated_at: "2025-07-13T10:30:00.000000Z"
+                    links:
+                      self:
+                        href: "http://localhost/v1/auth/me"
+                        method: "GET"
+                        description: "取得目前使用者"
+                      actions:
+                        logout:
+                          href: "http://localhost/v1/auth/logout"
+                          method: "POST"
+                          description: "登出目前使用者"
+                        refresh:
+                          href: "http://localhost/v1/auth/refresh"
+                          method: "POST"
+                          description: "刷新 access token"
+                      related:
+                        profiles:
+                          href: "http://localhost/v1/profiles"
+                          method: "GET"
+                          description: "檢視使用者 profiles"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+  # ===============================
+  # Refresh Token
+  # ===============================
+  /v1/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: 刷新身份驗證 token
+      description: |
+        撤銷目前的 token 並產生新的 token。
+
+        使用此端點在 token 到期前刷新身份驗證 token。
+        舊的 token 會被無效化，並回傳新的 token。
+      operationId: refreshToken
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token 刷新成功
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './_common.yaml#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          token:
+                            type: string
+                            description: 新的身份驗證 token
+                            example: "3|ghi789jkl012mno345pqr678stu901vwx234yza567bcd"
+                          token_type:
+                            type: string
+                            example: "Bearer"
+                          expires_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: Token 到期時間（如有設定的話）
+                            example: "2025-07-14T10:30:00.000000Z"
+              examples:
+                token_refreshed:
+                  summary: Token refreshed successfully
+                  value:
+                    message: "Token refreshed successfully"
+                    data:
+                      token: "3|ghi789jkl012mno345pqr678stu901vwx234yza567bcd"
+                      token_type: "Bearer"
+                      expires_at: "2025-07-14T10:30:00.000000Z"
+                    links:
+                      self:
+                        href: "http://localhost/v1/auth/me"
+                        method: "GET"
+                        description: "使用新 token 取得使用者資訊"
+                      actions:
+                        logout:
+                          href: "http://localhost/v1/auth/logout"
+                          method: "POST"
+                          description: "使用新 token 登出"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Laravel Sanctum API token 身份驗證。
+
+        **格式：** `Bearer {sanctum_token}`
+
+        **範例：** `Bearer 1|abc123def456ghi789jkl012mno345pqr678stu901vwx234yz`
+
+  schemas:
+    # ===============================
+    # Request Schemas
+    # ===============================
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+        - password_confirmation
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "John Doe"
+          description: 使用者的全名
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          example: "john.doe@example.com"
+          description: 有效的 email 位址（必須唯一）
+        password:
+          type: string
+          minLength: 8
+          maxLength: 255
+          example: "password123"
+          description: 密碼（最少 8 個字元）
+        password_confirmation:
+          type: string
+          example: "password123"
+          description: 密碼確認（必須與密碼相符）
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+          description: 已註冊的 email 位址
+        password:
+          type: string
+          example: "password123"
+          description: 使用者密碼
+        remember:
+          type: boolean
+          default: false
+          description: 是否建立長期有效的 token
+
+    # ===============================
+    # Response Schemas
+    # ===============================
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: 唯一的使用者識別碼
+        name:
+          type: string
+          example: "John Doe"
+          description: 使用者的全名
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+          description: Email 位址
+        email_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-07-13T10:30:00.000000Z"
+          description: Email 驗證時間戳記
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-07-12T10:30:00.000000Z"
+          description: 帳戶建立時間戳記
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-07-12T10:30:00.000000Z"
+          description: 最後更新時間戳記
+      required:
+        - id
+        - name
+        - email
+        - created_at
+        - updated_at
+
+    AuthResponse:
+      allOf:
+        - $ref: './_common.yaml#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                user:
+                  $ref: '#/components/schemas/User'
+                token:
+                  type: string
+                  description: 用於身份驗證的 Laravel Sanctum API token
+                  example: "1|abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+                token_type:
+                  type: string
+                  enum: ["Bearer"]
+                  description: 用於 Authorization 標頭的 token 類型
+                  example: "Bearer"
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Token 到期時間（如有設定的話）
+                  example: "2025-07-14T10:30:00.000000Z"
+              required:
+                - user
+                - token
+                - token_type

@@ -1,0 +1,947 @@
+openapi: 3.0.3
+info:
+  title: Laravel API - User Profiles
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: |
+    Laravel API 的使用者個人檔案（User Profile）管理端點。
+
+    本 API 允許使用者管理自己的個人檔案（profile），包含個人資訊、聯絡資料與設定。
+
+    ## Access Control（存取控制）
+
+    - **Regular users（一般使用者）**：僅能存取與修改自己的 profile
+    - **Admin users（管理員）**：可存取與修改所有使用者的 profile
+
+    ## Profile Relationships（Profile 關聯）
+
+    - 每位使用者僅能有一個 profile
+    - profile 會自動與已驗證的使用者（authenticated user）關聯
+    - profile 刪除後無法復原，為永久性操作
+
+servers:
+  - url: "{protocol}://{host}"
+    description: API 伺服器
+    variables:
+      protocol:
+        enum: ['http', 'https']
+        default: 'https'
+      host:
+        default: 'localhost:8000'
+        description: '開發伺服器的主機（host）與埠號（port）'
+
+paths:
+  # ===============================
+  # List Profiles
+  # ===============================
+  /v1/profiles:
+    get:
+      tags:
+        - Profiles
+      summary: 列出使用者 profiles
+      description: |
+        取得具有搜尋與篩選功能的分頁使用者 profiles 清單。
+
+        **存取控制（Access Control）：**
+        - 一般使用者：僅能檢視自己的 profile
+        - 管理員：可檢視所有 profiles
+
+        **搜尋：** 使用 `search` 參數可依姓名、email 或地點篩選 profiles。
+      operationId: listProfiles
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: './_common.yaml#/components/parameters/PageParameter'
+        - $ref: './_common.yaml#/components/parameters/PerPageParameter'
+        - $ref: './_common.yaml#/components/parameters/SearchParameter'
+        - name: sort
+          in: query
+          description: 依欄位和方向排序 profiles
+          required: false
+          schema:
+            type: string
+            enum:
+              - "created_at:asc"
+              - "created_at:desc"
+              - "updated_at:asc"
+              - "updated_at:desc"
+              - "first_name:asc"
+              - "first_name:desc"
+              - "last_name:asc"
+              - "last_name:desc"
+            default: "created_at:desc"
+            example: "first_name:asc"
+      responses:
+        '200':
+          description: 成功取得 Profiles
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+            X-Total-Count:
+              description: Profiles 總數
+              schema:
+                type: integer
+                example: 42
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Profiles retrieved successfully"
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Profile'
+                  meta:
+                    $ref: './_common.yaml#/components/schemas/PaginationMeta'
+                  links:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                      first:
+                        type: string
+                        nullable: true
+                      last:
+                        type: string
+                        nullable: true
+                      prev:
+                        type: string
+                        nullable: true
+                      next:
+                        type: string
+                        nullable: true
+                      self:
+                        type: object
+                      actions:
+                        type: object
+              examples:
+                profiles_list:
+                  summary: List of user profiles
+                  value:
+                    message: "Profiles retrieved successfully"
+                    data:
+                      - id: 1
+                        user_id: 1
+                        user:
+                          id: 1
+                          email: "john.doe@example.com"
+                          name: "John Doe"
+                        first_name: "John"
+                        last_name: "Doe"
+                        full_name: "John Doe"
+                        bio: "Software Developer passionate about Laravel"
+                        location: "San Francisco, CA"
+                        website: "https://johndoe.com"
+                        created_at: "2025-07-13T10:30:00.000000Z"
+                        updated_at: "2025-07-13T10:30:00.000000Z"
+                    meta:
+                      current_page: 1
+                      from: 1
+                      last_page: 3
+                      path: "http://localhost/v1/profiles"
+                      per_page: 15
+                      to: 15
+                      total: 42
+                    links:
+                      first: "http://localhost/v1/profiles?page=1"
+                      last: "http://localhost/v1/profiles?page=3"
+                      prev: null
+                      next: "http://localhost/v1/profiles?page=2"
+                      self:
+                        href: "http://localhost/v1/profiles"
+                        method: "GET"
+                        description: "目前的 profiles 頁面"
+                      actions:
+                        create:
+                          href: "http://localhost/v1/profiles"
+                          method: "POST"
+                          description: "建立新 profile"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+        '503':
+          $ref: './_common.yaml#/components/responses/ServiceUnavailableError'
+
+    # ===============================
+    # Create Profile
+    # ===============================
+    post:
+      tags:
+        - Profiles
+      summary: 建立使用者 profile
+      description: |
+        為已驗證的使用者建立新的 profile。
+
+        **重要注意事項：**
+        - 每位使用者僅能有一個 profile
+        - 如果 profile 已存在，此端點會回傳 400 錯誤
+        - 使用 PUT 或 PATCH 更新現有的 profile
+      operationId: createProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfileRequest'
+            examples:
+              basic_profile:
+                summary: Basic profile creation
+                value:
+                  first_name: "John"
+                  last_name: "Doe"
+                  bio: "Software Developer passionate about Laravel and API design"
+                  location: "San Francisco, CA"
+                  website: "https://johndoe.com"
+              minimal_profile:
+                summary: Minimal required fields
+                value:
+                  first_name: "Jane"
+                  last_name: "Smith"
+      responses:
+        '201':
+          description: Profile 建立成功
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+            Location:
+              description: 已建立的 profile URL
+              schema:
+                type: string
+                example: "http://localhost/v1/profiles/1"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+              examples:
+                profile_created:
+                  summary: Successfully created profile
+                  value:
+                    message: "Profile created successfully"
+                    data:
+                      profile:
+                        id: 1
+                        user_id: 1
+                        first_name: "John"
+                        last_name: "Doe"
+                        full_name: "John Doe"
+                        bio: "Software Developer passionate about Laravel and API design"
+                        location: "San Francisco, CA"
+                        website: "https://johndoe.com"
+                        phone: null
+                        date_of_birth: null
+                        avatar_url: null
+                        created_at: "2025-07-13T10:30:00.000000Z"
+                        updated_at: "2025-07-13T10:30:00.000000Z"
+                        user:
+                          id: 1
+                          name: "John Doe"
+                          email: "john.doe@example.com"
+                    links:
+                      self:
+                        href: "http://localhost/v1/profiles/1"
+                        method: "GET"
+                        description: "檢視已建立的 profile"
+                      actions:
+                        update:
+                          href: "http://localhost/v1/profiles/1"
+                          method: "PUT"
+                          description: "更新此 profile"
+                        patch:
+                          href: "http://localhost/v1/profiles/1"
+                          method: "PATCH"
+                          description: "部分更新此 profile"
+                        delete:
+                          href: "http://localhost/v1/profiles/1"
+                          method: "DELETE"
+                          description: "刪除此 profile"
+        '400':
+          description: Profile 已存在或請求無效
+          content:
+            application/json:
+              schema:
+                $ref: './_common.yaml#/components/schemas/BaseError'
+              examples:
+                profile_exists:
+                  summary: User already has a profile
+                  value:
+                    error:
+                      code: "PROFILE_ALREADY_EXISTS"
+                      message: "Profile already exists for this user."
+                      details: "Each user can only have one profile. Use PUT or PATCH to update the existing profile."
+                      timestamp: "2025-07-13T10:30:00.000000Z"
+                      request_id: "req_abc123def456"
+                    data:
+                      existing_profile_id: 123
+                    links:
+                      self:
+                        href: "http://localhost/v1/profiles"
+                        method: "POST"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '422':
+          $ref: './_common.yaml#/components/responses/ValidationError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+        '503':
+          $ref: './_common.yaml#/components/responses/ServiceUnavailableError'
+
+  # ===============================
+  # Profile by ID Operations
+  # ===============================
+  /v1/profiles/{id}:
+    parameters:
+      - $ref: './_common.yaml#/components/parameters/IdParameter'
+
+    get:
+      tags:
+        - Profiles
+      summary: 透過 ID 取得 profile
+      description: |
+        透過 ID 取得特定的使用者 profile。
+
+        **存取控制（Access Control）：**
+        - 一般使用者：僅能存取自己的 profile
+        - 管理員：可存取任何 profile
+
+        **Profile 資料：** 包含使用者資訊與所有 profile 欄位。
+      operationId: getProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 成功取得 Profile
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+            Last-Modified:
+              description: Profile 最後修改日期
+              schema:
+                type: string
+                example: "Sun, 13 Jul 2025 10:30:00 GMT"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+              examples:
+                profile_details:
+                  summary: Complete profile information
+                  value:
+                    message: "Profile retrieved successfully"
+                    data:
+                      profile:
+                        id: 1
+                        user_id: 1
+                        first_name: "John"
+                        last_name: "Doe"
+                        full_name: "John Doe"
+                        bio: "Software Developer passionate about Laravel and API design"
+                        website: "https://johndoe.com"
+                        location: "San Francisco, CA"
+                        phone: "+1-555-0123"
+                        date_of_birth: "1990-01-15"
+                        avatar_url: "https://example.com/avatars/johndoe.jpg"
+                        created_at: "2025-07-13T10:30:00.000000Z"
+                        updated_at: "2025-07-13T10:30:00.000000Z"
+                        user:
+                          id: 1
+                          name: "John Doe"
+                          email: "john.doe@example.com"
+                    links:
+                      self:
+                        href: "http://localhost/v1/profiles/1"
+                        method: "GET"
+                        description: "目前的 profile"
+                      related:
+                        user:
+                          href: "http://localhost/v1/auth/me"
+                          method: "GET"
+                          description: "關聯的使用者"
+                        profiles:
+                          href: "http://localhost/v1/profiles"
+                          method: "GET"
+                          description: "所有 profiles"
+                      actions:
+                        update:
+                          href: "http://localhost/v1/profiles/1"
+                          method: "PUT"
+                          description: "更新此 profile"
+                        patch:
+                          href: "http://localhost/v1/profiles/1"
+                          method: "PATCH"
+                          description: "部分更新此 profile"
+                        delete:
+                          href: "http://localhost/v1/profiles/1"
+                          method: "DELETE"
+                          description: "刪除此 profile"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common.yaml#/components/responses/NotFoundError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+    put:
+      tags:
+        - Profiles
+      summary: 更新 profile（完整替換）
+      description: |
+        以完整資料替換方式更新使用者 profile。
+
+        **存取控制（Access Control）：**
+        - 使用者僅能更新自己的 profile
+        - 管理員可更新任何 profile
+
+        **重要：** 這會替換所有 profile 資料。使用 PATCH 進行部分更新。
+      operationId: updateProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+            examples:
+              complete_update:
+                summary: Complete profile update
+                value:
+                  first_name: "John"
+                  last_name: "Doe"
+                  bio: "Senior Software Developer specializing in Laravel and Vue.js"
+                  website: "https://johndoe.dev"
+                  location: "Los Angeles, CA"
+                  phone: "+1-555-0123"
+                  date_of_birth: "1990-01-15"
+                  avatar_url: "https://example.com/avatars/johndoe-new.jpg"
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common.yaml#/components/responses/NotFoundError'
+        '422':
+          $ref: './_common.yaml#/components/responses/ValidationError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+    patch:
+      tags:
+        - Profiles
+      summary: 更新 profile（部分更新）
+      description: |
+        僅以提供的欄位部分更新使用者 profile。
+
+        **存取控制（Access Control）：**
+        - 使用者僅能更新自己的 profile
+        - 管理員可更新任何 profile
+
+        **彈性：** 僅需包含您要變更的欄位。
+      operationId: partialUpdateProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartialUpdateProfileRequest'
+            examples:
+              update_bio_only:
+                summary: Update only bio
+                value:
+                  bio: "Updated bio with new information about my interests"
+              update_contact_info:
+                summary: Update contact information
+                value:
+                  phone: "+1-555-9999"
+                  location: "New York, NY"
+                  website: "https://newdomain.com"
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common.yaml#/components/responses/NotFoundError'
+        '422':
+          $ref: './_common.yaml#/components/responses/ValidationError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+    delete:
+      tags:
+        - Profiles
+      summary: 刪除 profile
+      description: |
+        永久刪除使用者 profile。
+
+        **存取控制（Access Control）：**
+        - 使用者僅能刪除自己的 profile
+        - 管理員可刪除任何 profile
+
+        **警告：** 此操作不可逆且會永久移除所有 profile 資料。
+      operationId: deleteProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile 刪除成功
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                example: "req_abc123def456"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './_common.yaml#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        nullable: true
+                        example: null
+              examples:
+                profile_deleted:
+                  summary: Profile successfully deleted
+                  value:
+                    message: "Profile deleted successfully"
+                    data: {}
+                    links:
+                      self:
+                        href: "http://localhost/v1/profiles/{id}"
+                        method: "DELETE"
+                        description: "刪除 profile 端點"
+                      related:
+                        profiles:
+                          href: "http://localhost/v1/profiles"
+                          method: "GET"
+                          description: "列出剩餘的 profiles"
+                      actions:
+                        create_new:
+                          href: "http://localhost/v1/profiles"
+                          method: "POST"
+                          description: "建立新 profile"
+        '401':
+          $ref: './_common.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common.yaml#/components/responses/NotFoundError'
+        '429':
+          $ref: './_common.yaml#/components/responses/RateLimitError'
+        '500':
+          $ref: './_common.yaml#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Laravel Sanctum API token authentication.
+
+        **Format:** `Bearer {sanctum_token}`
+
+  schemas:
+    # ===============================
+    # Request Schemas
+    # ===============================
+    CreateProfileRequest:
+      type: object
+      required:
+        - first_name
+        - last_name
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "John"
+          description: User's first name
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Doe"
+          description: User's last name
+        bio:
+          type: string
+          maxLength: 1000
+          nullable: true
+          example: "Software Developer passionate about Laravel and API design"
+          description: Short biography or description
+        website:
+          type: string
+          format: uri
+          maxLength: 255
+          nullable: true
+          example: "https://johndoe.com"
+          description: Personal website URL
+        location:
+          type: string
+          maxLength: 255
+          nullable: true
+          example: "San Francisco, CA"
+          description: User's location
+        phone:
+          type: string
+          maxLength: 20
+          nullable: true
+          pattern: '^\+?[\d\s\-\(\)]+$'
+          example: "+1-555-0123"
+          description: Phone number
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-01-15"
+          description: Date of birth (YYYY-MM-DD)
+        avatar_url:
+          type: string
+          format: uri
+          maxLength: 500
+          nullable: true
+          example: "https://example.com/avatars/johndoe.jpg"
+          description: Profile picture URL
+
+    UpdateProfileRequest:
+      type: object
+      required:
+        - first_name
+        - last_name
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "John"
+          description: User's first name
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Doe"
+          description: User's last name
+        bio:
+          type: string
+          maxLength: 1000
+          nullable: true
+          example: "Software Developer passionate about Laravel and API design"
+          description: Short biography or description
+        website:
+          type: string
+          format: uri
+          maxLength: 255
+          nullable: true
+          example: "https://johndoe.com"
+          description: Personal website URL
+        location:
+          type: string
+          maxLength: 255
+          nullable: true
+          example: "San Francisco, CA"
+          description: User's location
+        phone:
+          type: string
+          maxLength: 20
+          nullable: true
+          pattern: '^\+?[\d\s\-\(\)]+$'
+          example: "+1-555-0123"
+          description: Phone number
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-01-15"
+          description: Date of birth (YYYY-MM-DD)
+        avatar_url:
+          type: string
+          format: uri
+          maxLength: 500
+          nullable: true
+          example: "https://example.com/avatars/johndoe.jpg"
+          description: Profile picture URL
+
+    PartialUpdateProfileRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "John"
+          description: User's first name
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Doe"
+          description: User's last name
+        bio:
+          type: string
+          maxLength: 1000
+          nullable: true
+          example: "Software Developer passionate about Laravel and API design"
+          description: Short biography or description
+        website:
+          type: string
+          format: uri
+          maxLength: 255
+          nullable: true
+          example: "https://johndoe.com"
+          description: Personal website URL
+        location:
+          type: string
+          maxLength: 255
+          nullable: true
+          example: "San Francisco, CA"
+          description: User's location
+        phone:
+          type: string
+          maxLength: 20
+          nullable: true
+          pattern: '^\+?[\d\s\-\(\)]+$'
+          example: "+1-555-0123"
+          description: Phone number
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-01-15"
+          description: Date of birth (YYYY-MM-DD)
+        avatar_url:
+          type: string
+          format: uri
+          maxLength: 500
+          nullable: true
+          example: "https://example.com/avatars/johndoe.jpg"
+          description: Profile picture URL
+
+    # ===============================
+    # Response Schemas
+    # ===============================
+    Profile:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Unique profile identifier
+        user_id:
+          type: integer
+          example: 1
+          description: Associated user ID
+        first_name:
+          type: string
+          example: "John"
+          description: User's first name
+        last_name:
+          type: string
+          example: "Doe"
+          description: User's last name
+        full_name:
+          type: string
+          example: "John Doe"
+          description: Combined first and last name (computed field)
+        bio:
+          type: string
+          nullable: true
+          example: "Software Developer passionate about Laravel and API design"
+          description: Short biography or description
+        website:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://johndoe.com"
+          description: Personal website URL
+        location:
+          type: string
+          nullable: true
+          example: "San Francisco, CA"
+          description: User's location
+        phone:
+          type: string
+          nullable: true
+          example: "+1-555-0123"
+          description: Phone number
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-01-15"
+          description: Date of birth
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://example.com/avatars/johndoe.jpg"
+          description: Profile picture URL
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-07-12T10:30:00.000000Z"
+          description: Profile creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-07-12T10:30:00.000000Z"
+          description: Last update timestamp
+        user:
+          type: object
+          description: Associated user information
+          properties:
+            id:
+              type: integer
+              example: 1
+            name:
+              type: string
+              example: "John Doe"
+            email:
+              type: string
+              format: email
+              example: "john.doe@example.com"
+      required:
+        - id
+        - user_id
+        - first_name
+        - last_name
+        - full_name
+        - created_at
+        - updated_at
+        - user
+
+    ProfileResponse:
+      allOf:
+        - $ref: './_common.yaml#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                profile:
+                  $ref: '#/components/schemas/Profile'
+              required:
+                - profile
+
+    ProfileListResponse:
+      allOf:
+        - $ref: './_common.yaml#/components/schemas/PaginatedResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                profiles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Profile'
+              required:
+                - profiles
+
+    # ===============================
+    # HATEOAS Links
+    # ===============================
+    ProfileLinks:
+      allOf:
+        - $ref: './_common.yaml#/components/schemas/ResourceLinks'
+        - type: object
+          properties:
+            self:
+              allOf:
+                - $ref: './_common.yaml#/components/schemas/HateoasLink'
+                - type: object
+                  properties:
+                    href:
+                      example: "http://localhost/v1/profiles/1"
+                    method:
+                      example: "GET"
+            related:
+              type: object
+              properties:
+                user:
+                  allOf:
+                    - $ref: './_common.yaml#/components/schemas/HateoasLink'
+                    - type: object
+                      properties:
+                        href:
+                          example: "http://localhost/v1/auth/me"
+                        method:
+                          example: "GET"
+                        description:
+                          example: "Associated user"
+            actions:
+              type: object
+              properties:
+                update:
+                  allOf:
+                    - $ref: './_common.yaml#/components/schemas/HateoasLink'
+                    - type: object
+                      properties:
+                        href:
+                          example: "http://localhost/v1/profiles/1"
+                        method:
+                          example: "PUT"
+                        description:
+                          example: "Update this profile"
+                patch:
+                  allOf:
+                    - $ref: './_common.yaml#/components/schemas/HateoasLink'
+                    - type: object
+                      properties:
+                        href:
+                          example: "http://localhost/v1/profiles/1"
+                        method:
+                          example: "PATCH"
+                        description:
+                          example: "Partially update this profile"
+                delete:
+                  allOf:
+                    - $ref: './_common.yaml#/components/schemas/HateoasLink'
+                    - type: object
+                      properties:
+                        href:
+                          example: "http://localhost/v1/profiles/1"
+                        method:
+                          example: "DELETE"
+                        description:
+                          example: "Delete this profile"

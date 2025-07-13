@@ -1,0 +1,1119 @@
+openapi: 3.0.3
+info:
+  title: Laravel API - Common Components
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: |
+    所有 API 端點共用的元件（components）與資料結構（schemas）。
+    包含 authentication（身份驗證）、pagination（分頁）、HATEOAS 連結，以及標準化的錯誤回應（error responses）。
+
+servers:
+  - url: "{protocol}://{host}"
+    description: API 伺服器
+    variables:
+      protocol:
+        enum: ['http', 'https']
+        default: 'https'
+      host:
+        default: 'api.yourapp.com'
+        description: 'API 主機名稱'
+
+paths: {}
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Laravel Sanctum API token 身份驗證。
+
+        **格式：** `Bearer {sanctum_api_token}`
+
+        **範例：** `Bearer 1|abc123def456ghi789jkl012mno345pqr678stu901vwx234yz`
+
+  parameters:
+    # ===============================
+    # Common Request Parameters
+    # ===============================
+    PageParameter:
+      name: page
+      in: query
+      description: 分頁的頁碼（從 1 開始）
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        example: 1
+
+    PerPageParameter:
+      name: per_page
+      in: query
+      description: 每頁項目數量
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 15
+        example: 15
+
+    IdParameter:
+      name: id
+      in: path
+      description: 資源識別碼
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        example: 1
+
+    SortParameter:
+      name: sort
+      in: query
+      description: |
+        排序欄位與方向。
+        格式：`field` 或 `field:direction`
+        方向：`asc`（升序）或 `desc`（降序）
+      required: false
+      schema:
+        type: string
+        example: "created_at:desc"
+
+    SearchParameter:
+      name: search
+      in: query
+      description: |
+        用於篩選結果的搜尋詞彙。
+        使用全文搜尋跨多個欄位進行搜尋。
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        example: "john doe"
+
+  schemas:
+    # ===============================
+    # Base Response Schemas
+    # ===============================
+    SuccessResponse:
+      type: object
+      description: 標準的成功回應格式
+      properties:
+        message:
+          type: string
+          description: 人類可讀的成功訊息
+          example: "Operation completed successfully"
+        data:
+          type: object
+          description: 回應資料（結構因端點而異）
+        links:
+          $ref: '#/components/schemas/ResourceLinks'
+        meta:
+          type: object
+          nullable: true
+          description: 額外的詮釋資料（metadata）
+      required:
+        - message
+        - data
+        - links
+
+    PaginatedResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              description: 分頁資料容器
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+            links:
+              $ref: '#/components/schemas/PaginationLinks'
+
+    # ===============================
+    # Pagination Schemas
+    # ===============================
+    PaginationMeta:
+      type: object
+      description: 分頁詮釋資料（metadata）
+      properties:
+        current_page:
+          type: integer
+          description: 目前頁碼
+          example: 1
+        from:
+          type: integer
+          nullable: true
+          description: 目前頁面第一個項目編號
+          example: 1
+        last_page:
+          type: integer
+          description: 最後一頁頁碼
+          example: 5
+        path:
+          type: string
+          description: 分頁的基礎 URL
+          example: "http://localhost/v1/profiles"
+        per_page:
+          type: integer
+          description: 每頁項目數
+          example: 15
+        to:
+          type: integer
+          nullable: true
+          description: 目前頁面最後一個項目編號
+          example: 15
+        total:
+          type: integer
+          description: 項目總數
+          example: 73
+      required:
+        - current_page
+        - last_page
+        - path
+        - per_page
+        - total
+
+    PaginationLinks:
+      allOf:
+        - $ref: '#/components/schemas/ResourceLinks'
+        - type: object
+          properties:
+            first:
+              type: string
+              nullable: true
+              description: 第一頁的 URL
+              example: "http://localhost/v1/profiles?page=1"
+            last:
+              type: string
+              nullable: true
+              description: 最後一頁的 URL
+              example: "http://localhost/v1/profiles?page=5"
+            prev:
+              type: string
+              nullable: true
+              description: 上一頁的 URL
+              example: null
+            next:
+              type: string
+              nullable: true
+              description: 下一頁的 URL
+              example: "http://localhost/v1/profiles?page=2"
+
+    # ===============================
+    # HATEOAS Link Schemas
+    # ===============================
+    ResourceLinks:
+      type: object
+      description: 用於資源導航與操作的 HATEOAS 連結
+      properties:
+        self:
+          $ref: '#/components/schemas/HateoasLink'
+        related:
+          type: object
+          nullable: true
+          description: 相關資源的連結
+          additionalProperties:
+            $ref: '#/components/schemas/HateoasLink'
+        actions:
+          type: object
+          nullable: true
+          description: 此資源上可用的操作
+          additionalProperties:
+            $ref: '#/components/schemas/HateoasLink'
+      required:
+        - self
+
+    HateoasLink:
+      type: object
+      description: 具有詮釋資料（metadata）的個別 HATEOAS 連結
+      properties:
+        href:
+          type: string
+          description: 連結的 URL
+          example: "http://localhost/v1/profiles/1"
+        method:
+          type: string
+          enum: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          default: "GET"
+          description: 連結的 HTTP 方法
+          example: "GET"
+        description:
+          type: string
+          nullable: true
+          description: 連結操作的人類可讀描述
+          example: "View profile details"
+        type:
+          type: string
+          nullable: true
+          description: 預期/回傳的媒體類型
+          example: "application/json"
+      required:
+        - href
+
+    # ===============================
+    # Base Error Schema
+    # ===============================
+    BaseError:
+      type: object
+      description: Base error response structure used by all error types
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code for programmatic handling
+              example: "VALIDATION_FAILED"
+            message:
+              type: string
+              description: Human-readable error message
+              example: "The given data was invalid."
+            details:
+              type: string
+              nullable: true
+              description: Additional context or suggestions for resolution
+              example: "Please check the submitted data and try again."
+            timestamp:
+              type: string
+              format: date-time
+              description: ISO 8601 timestamp when the error occurred
+              example: "2025-07-13T10:30:00.000000Z"
+            request_id:
+              type: string
+              description: Unique identifier for this request (for debugging and support)
+              example: "req_abc123def456"
+            trace_id:
+              type: string
+              nullable: true
+              description: Distributed tracing ID (if available)
+              example: "trace_xyz789"
+        data:
+          type: object
+          nullable: true
+          description: Error-specific data and context
+        links:
+          $ref: '#/components/schemas/ErrorLinks'
+        meta:
+          type: object
+          nullable: true
+          description: Additional metadata about the error context
+      required:
+        - error
+        - links
+
+    # ===============================
+    # Specific Error Types
+    # ===============================
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          description: Validation error with detailed field-level feedback
+          properties:
+            data:
+              type: object
+              properties:
+                errors:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items:
+                      type: string
+                  description: Field-specific validation error messages
+                  example:
+                    email:
+                      - "The email field is required."
+                      - "The email must be a valid email address."
+                    password:
+                      - "The password must be at least 8 characters."
+                failed_rules:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items:
+                      type: string
+                  description: Validation rules that failed for each field
+                  example:
+                    email: ["required", "email"]
+                    password: ["min:8"]
+                input_data:
+                  type: object
+                  nullable: true
+                  description: Sanitized copy of the input data (sensitive fields excluded)
+
+    AuthenticationErrorData:
+      type: object
+      description: Authentication error data payload
+      properties:
+        reason:
+          type: string
+          enum:
+            - "missing_token"
+            - "invalid_token"
+            - "expired_token"
+            - "revoked_token"
+            - "malformed_token"
+            - "invalid_credentials"
+          description: Specific reason for authentication failure
+          example: "invalid_token"
+        token_info:
+          type: object
+          nullable: true
+          properties:
+            expires_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: Token expiration time (if applicable)
+            issued_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: Token issue time (if applicable)
+            scopes:
+              type: array
+              items:
+                type: string
+              nullable: true
+              description: Token scopes (if applicable)
+
+    AuthenticationError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          description: Authentication failure with token and session context
+          properties:
+            data:
+              $ref: '#/components/schemas/AuthenticationErrorData'
+
+    AuthorizationError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          description: Authorization failure with permission context
+          properties:
+            data:
+              type: object
+              properties:
+                required_permissions:
+                  type: array
+                  items:
+                    type: string
+                  description: List of permissions required for this action
+                  example: ["profiles.update", "admin.access"]
+                user_permissions:
+                  type: array
+                  items:
+                    type: string
+                  nullable: true
+                  description: Current user's permissions (if applicable)
+                  example: ["profiles.view"]
+                resource_type:
+                  type: string
+                  description: Type of resource being accessed
+                  example: "profile"
+                resource_id:
+                  type: string
+                  nullable: true
+                  description: ID of the specific resource (if applicable)
+                  example: "123"
+                policy:
+                  type: string
+                  nullable: true
+                  description: Authorization policy that failed
+                  example: "ProfilePolicy@update"
+
+    NotFoundError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          description: Resource not found with search context
+          properties:
+            data:
+              type: object
+              properties:
+                resource_type:
+                  type: string
+                  description: Type of resource that was not found
+                  example: "profile"
+                resource_id:
+                  type: string
+                  nullable: true
+                  description: ID of the resource that was not found
+                  example: "123"
+                search_criteria:
+                  type: object
+                  nullable: true
+                  description: Search criteria used to look for the resource
+                  example:
+                    id: 123
+                    user_id: 456
+                endpoint:
+                  type: string
+                  nullable: true
+                  description: API endpoint that was not found
+                  example: "/v1/profiles/999"
+
+    RateLimitError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          description: Rate limit exceeded with timing information
+          properties:
+            data:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                  description: Rate limit threshold per window
+                  example: 60
+                remaining:
+                  type: integer
+                  description: Remaining requests in current window
+                  example: 0
+                reset_time:
+                  type: string
+                  format: date-time
+                  description: When the rate limit window resets
+                  example: "2025-07-13T11:00:00.000000Z"
+                retry_after:
+                  type: integer
+                  description: Seconds to wait before retrying
+                  example: 3600
+                window_type:
+                  type: string
+                  enum: ["sliding", "fixed"]
+                  description: Type of rate limiting window
+                  example: "sliding"
+
+    ServerError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          description: Server error with diagnostic information
+          properties:
+            data:
+              type: object
+              properties:
+                error_type:
+                  type: string
+                  enum:
+                    - "database_error"
+                    - "external_service_error"
+                    - "configuration_error"
+                    - "file_system_error"
+                    - "memory_error"
+                    - "timeout_error"
+                    - "unknown_error"
+                  description: Category of server error
+                  example: "database_error"
+                service:
+                  type: string
+                  nullable: true
+                  description: Service or component that failed
+                  example: "database"
+                recovery_suggestions:
+                  type: array
+                  items:
+                    type: string
+                  description: Actionable suggestions for recovery
+                  example:
+                    - "Please try again in a few minutes"
+                    - "If the problem persists, contact support"
+                error_id:
+                  type: string
+                  nullable: true
+                  description: Internal error tracking ID
+                  example: "err_abc123def456"
+                maintenance_mode:
+                  type: boolean
+                  nullable: true
+                  description: Whether the service is in maintenance mode
+                  example: true
+                estimated_recovery:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Estimated time when service will be restored
+                  example: "2025-07-13T12:00:00.000000Z"
+
+    # ===============================
+    # HATEOAS Error Links
+    # ===============================
+    ErrorLinks:
+      type: object
+      additionalProperties: true
+      description: HATEOAS links for error recovery and context
+      properties:
+        self:
+          type: object
+          properties:
+            href:
+              type: string
+              description: Link to the current request that failed
+              example: "http://localhost/v1/profiles/123"
+            method:
+              type: string
+              description: HTTP method used in the failed request
+              example: "GET"
+        help:
+          type: object
+          nullable: true
+          properties:
+            href:
+              type: string
+              description: Link to documentation for this error type
+              example: "https://api.example.com/docs/errors/not-found"
+            description:
+              type: string
+              example: "Documentation for handling Not Found errors"
+        actions:
+          type: object
+          nullable: true
+          description: Available recovery actions
+          properties:
+            retry:
+              type: object
+              nullable: true
+              properties:
+                href:
+                  type: string
+                  description: Link to retry the failed request
+                method:
+                  type: string
+                  description: HTTP method for retry
+                delay:
+                  type: integer
+                  nullable: true
+                  description: Suggested delay in seconds before retry
+                description:
+                  type: string
+                  example: "Retry the request"
+            login:
+              type: object
+              nullable: true
+              properties:
+                href:
+                  type: string
+                  description: Link to authentication endpoint
+                  example: "http://localhost/v1/auth/login"
+                method:
+                  type: string
+                  example: "POST"
+                description:
+                  type: string
+                  example: "Authenticate to access this resource"
+            refresh_token:
+              type: object
+              nullable: true
+              properties:
+                href:
+                  type: string
+                  description: Link to token refresh endpoint
+                  example: "http://localhost/v1/auth/refresh"
+                method:
+                  type: string
+                  example: "POST"
+                description:
+                  type: string
+                  example: "Refresh authentication token"
+            contact_support:
+              type: object
+              nullable: true
+              properties:
+                href:
+                  type: string
+                  description: Link to support contact information
+                  example: "mailto:support@example.com"
+                description:
+                  type: string
+                  example: "Contact support for assistance"
+            alternatives:
+              type: object
+              nullable: true
+              additionalProperties:
+                type: object
+                properties:
+                  href:
+                    type: string
+                  method:
+                    type: string
+                  description:
+                    type: string
+              description: Alternative actions or resources
+        related:
+          type: object
+          nullable: true
+          description: Links to related resources
+          additionalProperties:
+            type: object
+            properties:
+              href:
+                type: string
+              method:
+                type: string
+                default: "GET"
+              description:
+                type: string
+
+    # ===============================
+    # Legacy Error Schema (Deprecated)
+    # ===============================
+    ErrorResponse:
+      type: object
+      deprecated: true
+      description: "Legacy error schema. Use BaseError instead."
+      properties:
+        message:
+          type: string
+          example: "The given data was invalid."
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            email:
+              - "The email field is required."
+
+  responses:
+    # ===============================
+    # 400 Bad Request
+    # ===============================
+    BadRequestError:
+      description: |
+        Bad Request - The request was malformed, contains invalid data, or violates API constraints.
+
+        Common causes:
+        - Malformed JSON in request body
+        - Invalid content type
+        - Missing required headers
+        - Invalid query parameters
+      headers:
+        X-Request-ID:
+          description: Unique identifier for this request
+          schema:
+            type: string
+            example: "req_abc123def456"
+        X-RateLimit-Limit:
+          description: Request limit per hour
+          schema:
+            type: integer
+            example: 1000
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+            example: 999
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BaseError'
+          examples:
+            malformed_json:
+              summary: Malformed JSON request
+              value:
+                error:
+                  code: "MALFORMED_JSON"
+                  message: "The request body contains malformed JSON."
+                  details: "Unexpected token '}' in JSON at position 45"
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_abc123def456"
+                data: null
+                links:
+                  self:
+                    href: "http://localhost/v1/profiles"
+                    method: "POST"
+                  help:
+                    href: "https://api.example.com/docs/request-format"
+                    description: "API request format documentation"
+                  actions:
+                    retry:
+                      href: "http://localhost/v1/profiles"
+                      method: "POST"
+                      description: "Retry with valid JSON"
+
+    # ===============================
+    # 401 Unauthorized
+    # ===============================
+    UnauthorizedError:
+      description: |
+        Unauthorized - Authentication required or authentication failed.
+
+        Common causes:
+        - Missing Bearer token
+        - Invalid or malformed token
+        - Expired token
+        - Revoked token
+      headers:
+        WWW-Authenticate:
+          description: Authentication method required
+          schema:
+            type: string
+            example: "Bearer"
+        X-Request-ID:
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthenticationError'
+          examples:
+            missing_token:
+              summary: Missing authentication token
+              value:
+                error:
+                  code: "MISSING_TOKEN"
+                  message: "Authentication token is required."
+                  details: "Please provide a valid Bearer token in the Authorization header."
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_abc123def456"
+                data:
+                  reason: "missing_token"
+                links:
+                  self:
+                    href: "http://localhost/v1/profiles"
+                    method: "GET"
+                  actions:
+                    login:
+                      href: "http://localhost/v1/auth/login"
+                      method: "POST"
+                      description: "Login to obtain authentication token"
+                  help:
+                    href: "https://api.example.com/docs/authentication"
+                    description: "Authentication documentation"
+            expired_token:
+              summary: Expired authentication token
+              value:
+                error:
+                  code: "EXPIRED_TOKEN"
+                  message: "The authentication token has expired."
+                  details: "Please refresh your token or login again."
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_ghi789jkl012"
+                data:
+                  reason: "expired_token"
+                  token_info:
+                    expires_at: "2025-07-13T09:30:00.000000Z"
+                    issued_at: "2025-07-12T09:30:00.000000Z"
+                links:
+                  self:
+                    href: "http://localhost/v1/profiles"
+                    method: "GET"
+                  actions:
+                    refresh_token:
+                      href: "http://localhost/v1/auth/refresh"
+                      method: "POST"
+                      description: "Refresh the authentication token"
+                    login:
+                      href: "http://localhost/v1/auth/login"
+                      method: "POST"
+                      description: "Login to obtain a new authentication token"
+
+    # ===============================
+    # 403 Forbidden
+    # ===============================
+    ForbiddenError:
+      description: |
+        Forbidden - Insufficient permissions to perform the requested action.
+
+        The user is authenticated but lacks the necessary permissions.
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthorizationError'
+          examples:
+            insufficient_permissions:
+              summary: User lacks required permissions
+              value:
+                error:
+                  code: "INSUFFICIENT_PERMISSIONS"
+                  message: "You do not have permission to perform this action."
+                  details: "This action requires admin privileges."
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_abc123def456"
+                data:
+                  required_permissions: ["admin.access", "profiles.delete"]
+                  user_permissions: ["profiles.view", "profiles.update"]
+                  resource_type: "profile"
+                  resource_id: "123"
+                links:
+                  self:
+                    href: "http://localhost/v1/profiles/123"
+                    method: "DELETE"
+                  help:
+                    href: "https://api.example.com/docs/permissions"
+                    description: "Permissions documentation"
+                  actions:
+                    contact_support:
+                      href: "mailto:support@example.com"
+                      description: "Contact support to request additional permissions"
+
+    # ===============================
+    # 404 Not Found
+    # ===============================
+    NotFoundError:
+      description: |
+        Not Found - The requested resource or endpoint does not exist.
+
+        Common causes:
+        - Invalid resource ID
+        - Deleted resource
+        - Non-existent API endpoint
+        - Incorrect URL path
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotFoundError'
+          examples:
+            resource_not_found:
+              summary: Resource not found
+              value:
+                error:
+                  code: "RESOURCE_NOT_FOUND"
+                  message: "The requested resource was not found."
+                  details: "Profile with ID 999 does not exist."
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_abc123def456"
+                data:
+                  resource_type: "profile"
+                  resource_id: "999"
+                  search_criteria:
+                    id: 999
+                links:
+                  self:
+                    href: "http://localhost/v1/profiles/999"
+                    method: "GET"
+                  help:
+                    href: "https://api.example.com/docs/resources/profiles"
+                    description: "Profile API documentation"
+
+    # ===============================
+    # 422 Unprocessable Entity
+    # ===============================
+    ValidationError:
+      description: |
+        Unprocessable Entity - The request data failed validation.
+
+        The request is syntactically correct but contains invalid or incomplete data.
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          examples:
+            validation_failed:
+              summary: Multiple validation errors
+              value:
+                error:
+                  code: "VALIDATION_FAILED"
+                  message: "The given data was invalid."
+                  details: "Please check the highlighted fields and try again."
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_abc123def456"
+                data:
+                  errors:
+                    email:
+                      - "The email field is required."
+                      - "The email must be a valid email address."
+                    password:
+                      - "The password must be at least 8 characters."
+                  failed_rules:
+                    email: ["required", "email"]
+                    password: ["min:8"]
+                links:
+                  self:
+                    href: "http://localhost/v1/auth/register"
+                    method: "POST"
+                  help:
+                    href: "https://api.example.com/docs/validation"
+                    description: "Validation rules documentation"
+                  actions:
+                    retry:
+                      href: "http://localhost/v1/auth/register"
+                      method: "POST"
+                      description: "Retry with corrected data"
+
+    # ===============================
+    # 429 Too Many Requests
+    # ===============================
+    RateLimitError:
+      description: |
+        Too Many Requests - Rate limit exceeded.
+
+        The client has sent too many requests in a given time window.
+      headers:
+        X-RateLimit-Limit:
+          description: Request limit per window
+          schema:
+            type: integer
+            example: 60
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+            example: 0
+        X-RateLimit-Reset:
+          description: Unix timestamp when the rate limit resets
+          schema:
+            type: integer
+            example: 1689260400
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+            example: 3600
+        X-Request-ID:
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RateLimitError'
+          example:
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "Too many requests. Please try again later."
+              details: "You have exceeded the rate limit of 60 requests per hour."
+              timestamp: "2025-07-13T10:30:00.000000Z"
+              request_id: "req_abc123def456"
+            data:
+              limit: 60
+              remaining: 0
+              reset_time: "2025-07-13T11:00:00.000000Z"
+              retry_after: 3600
+            links:
+              self:
+                href: "http://localhost/v1/profiles"
+                method: "GET"
+              help:
+                href: "https://api.example.com/docs/rate-limits"
+                description: "Rate limiting documentation"
+              actions:
+                retry:
+                  href: "http://localhost/v1/profiles"
+                  method: "GET"
+                  delay: 3600
+                  description: "Retry after rate limit resets"
+
+    # ===============================
+    # 500 Internal Server Error
+    # ===============================
+    ServerError:
+      description: |
+        Internal Server Error - An unexpected error occurred on the server.
+
+        The server encountered an unexpected condition that prevented it from fulfilling the request.
+      headers:
+        X-Request-ID:
+          description: Unique identifier for this request (for debugging)
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ServerError'
+          examples:
+            database_error:
+              summary: Database connection error
+              value:
+                error:
+                  code: "DATABASE_ERROR"
+                  message: "An internal server error occurred."
+                  details: "Unable to connect to the database. Please try again later."
+                  timestamp: "2025-07-13T10:30:00.000000Z"
+                  request_id: "req_abc123def456"
+                data:
+                  error_type: "database_error"
+                  service: "database"
+                  recovery_suggestions:
+                    - "Please try again in a few minutes"
+                    - "If the problem persists, contact support"
+                links:
+                  self:
+                    href: "http://localhost/v1/profiles"
+                    method: "GET"
+                  actions:
+                    retry:
+                      href: "http://localhost/v1/profiles"
+                      method: "GET"
+                      delay: 60
+                      description: "Retry the request after a short delay"
+                    contact_support:
+                      href: "mailto:support@example.com"
+                      description: "Contact support if the issue persists"
+
+    # ===============================
+    # 503 Service Unavailable
+    # ===============================
+    ServiceUnavailableError:
+      description: |
+        Service Unavailable - The service is temporarily unavailable.
+
+        The server is currently unable to handle the request due to temporary overload or maintenance.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+            example: 120
+        X-Request-ID:
+          schema:
+            type: string
+            example: "req_abc123def456"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ServerError'
+          example:
+            error:
+              code: "SERVICE_UNAVAILABLE"
+              message: "The service is temporarily unavailable."
+              details: "We are performing scheduled maintenance. Service will resume shortly."
+              timestamp: "2025-07-13T10:30:00.000000Z"
+              request_id: "req_abc123def456"
+            data:
+              error_type: "configuration_error"
+              service: "maintenance"
+              maintenance_mode: true
+              estimated_recovery: "2025-07-13T12:00:00.000000Z"
+              recovery_suggestions:
+                - "Please try again after 12:00 PM UTC"
+                - "Check our status page for updates"
+            links:
+              self:
+                href: "http://localhost/v1/profiles"
+                method: "GET"
+              actions:
+                retry:
+                  href: "http://localhost/v1/profiles"
+                  method: "GET"
+                  delay: 120
+                  description: "Retry after maintenance window"
+              related:
+                status_page:
+                  href: "https://status.example.com"
+                  description: "Service status page"
