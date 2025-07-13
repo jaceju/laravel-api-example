@@ -1,0 +1,28 @@
+<?php
+
+namespace {{ namespace }};
+
+use BinaryCats\LaravelRbac\DefinedRole;
+
+class {{ class }} extends DefinedRole
+{
+    /**
+     * Name of the role
+     */
+    protected string $name = '';
+
+    /** @var array|string[]  */
+    protected array $guards = [
+        'sanctum'
+    ];
+
+    /**
+     * List of enumerated permissions for the `sanctum` guard
+     *
+     * @return array
+     */
+    public function sanctum(): array
+    {
+        return [];
+    }
+}
